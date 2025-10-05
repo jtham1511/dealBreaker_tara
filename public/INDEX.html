@@ -1522,7 +1522,17 @@
   }
   window.showTab = showTab;
 
-  document.addEventListener('DOMContentLoaded', function(){
+
+//  document.addEventListener('DOMContentLoaded', function(){
+  function onReady(fn){
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', fn, { once: true });
+    } else {
+      fn();
+    }
+  }
+
+  onReady(function(){
     document.querySelectorAll('.tabs .tab, .tabs button').forEach(function(btn){
       if (!btn.dataset.tab) {
         var attr = btn.getAttribute('onclick') || '';
@@ -1559,7 +1569,8 @@
       }
     }
   }
-  document.addEventListener('DOMContentLoaded', function(){
+//  document.addEventListener('DOMContentLoaded', function(){
+  onReady(function(){
     const input = document.getElementById('ai-chat-input');
     const sendBtn = document.getElementById('ai-chat-send') || document.getElementById('ai-chat-submit');
     const out = document.getElementById('ai-chat-output');
