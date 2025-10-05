@@ -1,5 +1,6 @@
-export const runtime = 'edge';
-export const preferredRegion = ['sin1', 'hkg1', 'bom1'];
+// export const runtime = 'edge';
+//  export const preferredRegion = ['sin1', 'hkg1', 'bom1'];
+export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 
