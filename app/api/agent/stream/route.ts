@@ -72,22 +72,39 @@ export async function POST(req: NextRequest) {
       ? body.message.trim()
       : 'Hello';
 
+  const requiredVars = ['OPENAI_API_KEY'] as const;
+
+  const missing = requiredVars.filter((name) => !process.env[name]);
+  if (missing.length > 0) {
+    const detail = `Missing required environment variable${
+      missing.length > 1 ? 's' : ''
+    }: ${missing.join(', ')}`;
+    const payload = formatEvent('error', { detail }) + formatEvent('done', {});
+    return new Response(payload, { status: 200, headers: sseHeaders });
+  }
+
   try {
-    const endpoint = requiredEnv('AZURE_OPENAI_ENDPOINT');
-    const deployment = requiredEnv('AZURE_OPENAI_DEPLOYMENT');
-    const apiVersion = requiredEnv('AZURE_OPENAI_API_VERSION');
-    const apiKey = requiredEnv('AZURE_OPENAI_API_KEY');
+//    const endpoint = requiredEnv('AZURE_OPENAI_ENDPOINT');
+//    const deployment = requiredEnv('AZURE_OPENAI_DEPLOYMENT');
+//    const apiVersion = requiredEnv('AZURE_OPENAI_API_VERSION');
+//    const apiKey = requiredEnv('AZURE_OPENAI_API_KEY');
+    const apiKey = requiredEnv('OPENAI_API_KEY');
+    const baseUrl = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
+    const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 
-    const url = new URL(`/openai/deployments/${deployment}/chat/completions`, endpoint);
-    url.searchParams.set('api-version', apiVersion);
-
-    const upstream = await fetch(url.toString(), {
+//    const url = new URL(`/openai/deployments/${deployment}/chat/completions`, endpoint);
+//    url.searchParams.set('api-version', apiVersion);
+//
+//    const upstream = await fetch(url.toString(), {
+    const upstream = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'api-key': apiKey,
+//        'api-key': apiKey,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
+        model,
         messages: [
           {
             role: 'system',
