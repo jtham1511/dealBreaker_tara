@@ -1199,7 +1199,7 @@
     <div class="chat-row">
       <textarea id="ai-chat-input" class="chat-input" placeholder="Ask the agent about usage, costs, or insights..."></textarea>
       <button id="ai-chat-send" class="chat-send">Send</button>
-      <small class="chat-hint">Azure OpenAI</small>
+      <small class="chat-hint">OpenAI Platform</small>
     </div>
     <div id="ai-chat-output" class="chat-output"></div>
   </div>
@@ -1523,7 +1523,6 @@
   window.showTab = showTab;
 
 
-//  document.addEventListener('DOMContentLoaded', function(){
   function onReady(fn){
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', fn, { once: true });
@@ -1549,15 +1548,12 @@
     if (activePane) showTab(activePane.id || 'overview');
   });
 
-//  async function streamChat(message, onChunk){
   async function streamChat(message, handlers){
     const { onChunk, onError, onDone } = handlers || {};
     const resp = await fetch('/api/agent/stream', {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ message })
     });
-//    if(!resp.ok) throw new Error('HTTP '+resp.status);
-//    const reader = resp.body.getReader(); const decoder = new TextDecoder();
     if(!resp.ok){
       const detail = await resp.text();
       throw new Error('HTTP '+resp.status+(detail ? ': '+detail : ''));
@@ -1566,15 +1562,6 @@
     const decoder = new TextDecoder();
     let buffer = '';
     while(true){
-//      const { value, done } = await reader.read(); if(done) break;
-//      const text = decoder.decode(value);
-//      const lines = text.split('\n');
-//      for(const raw of lines){
-//        if(!raw.startsWith('data:')) continue;
-//        const data = raw.slice(5).trim();
-//        if(!data) continue;
-//        if(data==='[DONE]') return;
-//        try{ const obj = JSON.parse(data); if(obj.text) onChunk(obj.text); }catch{}
       const { value, done } = await reader.read();
       if(done) break;
       buffer += decoder.decode(value, { stream:true });
@@ -1614,7 +1601,7 @@
     }
     if(onDone) onDone();
   }
-//  document.addEventListener('DOMContentLoaded', function(){
+
   onReady(function(){
     const input = document.getElementById('ai-chat-input');
     const sendBtn = document.getElementById('ai-chat-send') || document.getElementById('ai-chat-submit');
@@ -1625,7 +1612,6 @@
       if(!input || !out) return;
       const msg = (input.value||'').trim(); if(!msg) return;
       out.textContent = '';
-//      try{ await streamChat(msg, append); }catch(e){ append('\n[error] '+e.message); }
       if(sendBtn) sendBtn.disabled = true;
       try{
         await streamChat(msg, {

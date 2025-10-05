@@ -1,8 +1,8 @@
-// export const runtime='edge';
-// export const preferredRegion=['sin1','hkg1','bom1'];
 export const runtime = 'nodejs';
 
 import { NextRequest } from 'next/server';
+
+import { CONTRACT_CONTEXT } from '../context';
 
 type ChatRequestBody = {
   message?: unknown;
@@ -40,13 +40,82 @@ function emitDataPayload(data: string, queue: (chunk: string) => void): boolean 
 
   try {
     const parsed = JSON.parse(data);
-    const delta = parsed?.choices?.[0]?.delta?.content;
+    const choice = Array.isArray(parsed?.choices)
+      ? parsed.choices[0]
+      : undefined;
+    const delta = choice?.delta;
+
     if (delta) {
-      queue(`data: ${JSON.stringify({ text: delta })}\n\n`);
+      const segments: string[] = [];
+
+      const collect = (value: unknown) => {
+        if (typeof value === 'string' && value.length > 0) {
+          segments.push(value);
+        }
+      };
+
+      if (typeof delta.content === 'string' || Array.isArray(delta.content)) {
+        const content = delta.content;
+        if (typeof content === 'string') {
+          collect(content);
+        } else {
+          for (const part of content) {
+            if (typeof part === 'string') {
+              collect(part);
+            } else if (part && typeof part === 'object') {
+              const maybeText =
+                'text' in part && typeof part.text === 'string'
+                  ? part.text
+                  : undefined;
+              if (maybeText) {
+                collect(maybeText);
+              }
+            }
+          }
+        }
+      }
+
+      if (typeof delta.content === 'undefined' && Array.isArray(delta?.messages)) {
+        for (const message of delta.messages) {
+          if (message && typeof message === 'object') {
+            const maybeText =
+              'content' in message && typeof message.content === 'string'
+                ? message.content
+                : undefined;
+            if (maybeText) {
+              collect(maybeText);
+            }
+          }
+        }
+      }
+
+      if (Array.isArray(delta.reasoning)) {
+        for (const step of delta.reasoning) {
+          if (step && typeof step === 'object') {
+            const maybeText =
+              'text' in step && typeof step.text === 'string' ? step.text : undefined;
+            if (maybeText) {
+              collect(maybeText);
+            }
+          }
+        }
+      }
+
+      if (segments.length > 0) {
+        queue(`data: ${JSON.stringify({ text: segments.join('') })}\n\n`);
+        return false;
+      }
+    }
+  
+    const messageContent = choice?.message?.content;
+    if (typeof messageContent === 'string' && messageContent.length > 0) {
+      queue(`data: ${JSON.stringify({ text: messageContent })}\n\n`);
       return false;
     }
+
+    return false;
   } catch {
-    // fall through to emit raw text below
+    // Fall back to raw emission below when parsing fails.
   }
 
   queue(`data: ${JSON.stringify({ text: data })}\n\n`);
@@ -84,23 +153,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-//    const endpoint = requiredEnv('AZURE_OPENAI_ENDPOINT');
-//    const deployment = requiredEnv('AZURE_OPENAI_DEPLOYMENT');
-//    const apiVersion = requiredEnv('AZURE_OPENAI_API_VERSION');
-//    const apiKey = requiredEnv('AZURE_OPENAI_API_KEY');
     const apiKey = requiredEnv('OPENAI_API_KEY');
     const baseUrl = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
     const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 
-//    const url = new URL(`/openai/deployments/${deployment}/chat/completions`, endpoint);
-//    url.searchParams.set('api-version', apiVersion);
-//
-//    const upstream = await fetch(url.toString(), {
     const upstream = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-//        'api-key': apiKey,
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
@@ -108,8 +168,10 @@ export async function POST(req: NextRequest) {
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful assistant for a Singapore Government analysis portal.',
+            content:
+              'You are the embedded analyst for the Singapore Government Gartner contract evaluation portal. Respond with confident, data-backed insights from the provided context. Avoid asking the user to clarify what the Gartner contract is—assume they are referring to this dataset unless they specify otherwise. When data gaps exist, note them succinctly while still giving actionable guidance.',
           },
+          { role: 'system', content: `Contract intelligence summary:\n${CONTRACT_CONTEXT}` },
           { role: 'user', content: message },
         ],
         temperature: 0.2,
@@ -120,8 +182,11 @@ export async function POST(req: NextRequest) {
 
     if (!upstream.ok || !upstream.body) {
       const detail = await upstream.text();
-      return new Response(formatEvent('error', { detail: detail || 'Upstream error' }), {
-        status: upstream.status || 502,
+      const payload =
+        formatEvent('error', { detail: detail || 'Upstream error' }) +
+        formatEvent('done', {});
+      return new Response(payload, {
+        status: 200,
         headers: sseHeaders,
       });
     }
@@ -174,22 +239,21 @@ export async function POST(req: NextRequest) {
           }));
         } finally {
           controller.close();
-          }
-        },
-        async cancel() {
-            await reader.cancel().catch(() => undefined);
-        },
-      });
+        }
+      },
+      async cancel() {
+        await reader.cancel().catch(() => undefined);
+      },
+    });
 
-      return new Response(stream, { headers: sseHeaders });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      const status = detail.startsWith('Missing required environment variable') ? 500 : 502;
+    return new Response(stream, { headers: sseHeaders });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const payload = formatEvent('error', { detail }) + formatEvent('done', {});
 
-      return new Response(JSON.stringify({ error: 'Configuration error', detail }), {
-        status,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
+    return new Response(payload, {
+      status: 200,
+      headers: sseHeaders,
+    });
+  }
 }
