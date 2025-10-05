@@ -1549,25 +1549,70 @@
     if (activePane) showTab(activePane.id || 'overview');
   });
 
-  async function streamChat(message, onChunk){
+//  async function streamChat(message, onChunk){
+  async function streamChat(message, handlers){
+    const { onChunk, onError, onDone } = handlers || {};
     const resp = await fetch('/api/agent/stream', {
       method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ message })
     });
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    const reader = resp.body.getReader(); const decoder = new TextDecoder();
+//    if(!resp.ok) throw new Error('HTTP '+resp.status);
+//    const reader = resp.body.getReader(); const decoder = new TextDecoder();
+    if(!resp.ok){
+      const detail = await resp.text();
+      throw new Error('HTTP '+resp.status+(detail ? ': '+detail : ''));
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
     while(true){
-      const { value, done } = await reader.read(); if(done) break;
-      const text = decoder.decode(value);
-      const lines = text.split('\n');
-      for(const raw of lines){
-        if(!raw.startsWith('data:')) continue;
-        const data = raw.slice(5).trim();
-        if(!data) continue;
-        if(data==='[DONE]') return;
-        try{ const obj = JSON.parse(data); if(obj.text) onChunk(obj.text); }catch{}
+//      const { value, done } = await reader.read(); if(done) break;
+//      const text = decoder.decode(value);
+//      const lines = text.split('\n');
+//      for(const raw of lines){
+//        if(!raw.startsWith('data:')) continue;
+//        const data = raw.slice(5).trim();
+//        if(!data) continue;
+//        if(data==='[DONE]') return;
+//        try{ const obj = JSON.parse(data); if(obj.text) onChunk(obj.text); }catch{}
+      const { value, done } = await reader.read();
+      if(done) break;
+      buffer += decoder.decode(value, { stream:true });
+      let frameEnd;
+      while((frameEnd = buffer.indexOf('\n\n')) !== -1){
+        const frame = buffer.slice(0, frameEnd);
+        buffer = buffer.slice(frameEnd + 2);
+        const lines = frame.split('\n');
+        let eventType = 'message';
+        const dataLines = [];
+        lines.forEach(function(raw){
+          const line = raw.trim();
+          if(!line) return;
+          if(line.startsWith('event:')) eventType = line.slice(6).trim() || 'message';
+          else if(line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+        });
+        const dataStr = dataLines.join('\n');
+        if(eventType === 'error'){
+          let detail = dataStr;
+          try{ detail = JSON.parse(dataStr).detail || detail; }catch{}
+          if(onError) onError(detail);
+          else throw new Error(detail);
+          continue;
+        }
+        if(eventType === 'done'){
+          if(onDone) onDone();
+          return;
+        }
+        if(!dataStr) continue;
+        try{
+          const obj = JSON.parse(dataStr);
+          if(obj && obj.text && onChunk) onChunk(obj.text);
+        }catch{
+          if(onChunk) onChunk(dataStr);
+        }
       }
     }
+    if(onDone) onDone();
   }
 //  document.addEventListener('DOMContentLoaded', function(){
   onReady(function(){
@@ -1575,11 +1620,24 @@
     const sendBtn = document.getElementById('ai-chat-send') || document.getElementById('ai-chat-submit');
     const out = document.getElementById('ai-chat-output');
     function append(t){ if(out){ out.textContent += t; out.scrollTop = out.scrollHeight; } }
+    function appendLine(t){ append((out.textContent ? '\n' : '') + t); }
     async function handle(){
       if(!input || !out) return;
       const msg = (input.value||'').trim(); if(!msg) return;
       out.textContent = '';
-      try{ await streamChat(msg, append); }catch(e){ append('\n[error] '+e.message); }
+//      try{ await streamChat(msg, append); }catch(e){ append('\n[error] '+e.message); }
+      if(sendBtn) sendBtn.disabled = true;
+      try{
+        await streamChat(msg, {
+          onChunk: append,
+          onError(detail){ appendLine('[error] '+detail); },
+          onDone(){ if(sendBtn) sendBtn.disabled = false; }
+        });
+      }catch(e){
+        appendLine('[error] '+(e && e.message ? e.message : e));
+        if(sendBtn) sendBtn.disabled = false;
+      }
+      if(sendBtn) sendBtn.disabled = false;
     }
     if (sendBtn) sendBtn.addEventListener('click', function(e){ e.preventDefault(); handle(); });
   });
