@@ -106,7 +106,7 @@ function emitDataPayload(data: string, queue: (chunk: string) => void): boolean 
         return false;
       }
     }
-  
+
     const messageContent = choice?.message?.content;
     if (typeof messageContent === 'string' && messageContent.length > 0) {
       queue(`data: ${JSON.stringify({ text: messageContent })}\n\n`);
