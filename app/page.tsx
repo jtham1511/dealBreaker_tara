@@ -1,1 +1,0 @@
-export default function Home(){return(<main style={{padding:'2rem',fontFamily:'system-ui'}}><h1>Demo 0005</h1><p><a href="/INDEX.html">Open the dashboard</a></p></main>);}
